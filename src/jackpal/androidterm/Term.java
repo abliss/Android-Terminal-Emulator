@@ -16,6 +16,7 @@
 
 package jackpal.androidterm;
 
+import com.googlecode.abliss.term.R;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -61,6 +62,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.CompletionInfo;
+import android.view.inputmethod.CorrectionInfo;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
@@ -2910,6 +2912,18 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
                 }
                 return false;
             }
+	    @Override public boolean commitCorrection(CorrectionInfo arg0) {
+                if (Term.LOG_IME) {
+                    Log.w(TAG, "commitCorrection " + arg0);
+                }
+                return false;
+            }
+	    @Override public boolean setComposingRegion(int a, int b) {
+                if (Term.LOG_IME) {
+                    Log.w(TAG, "commitCorrection " + a + "," + b);
+                }
+                return false;
+            }
 
             public boolean endBatchEdit() {
                 if (Term.LOG_IME) {
@@ -3072,6 +3086,12 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
                     Log.w(TAG, "setSelection" + arg0 + "," + arg1);
                 }
                 return true;
+            }
+            public CharSequence getSelectedText(int arg0) {
+                if (Term.LOG_IME) {
+                    Log.w(TAG, "setSelection" + arg0 );
+                }
+                return null;
             }
         };
     }

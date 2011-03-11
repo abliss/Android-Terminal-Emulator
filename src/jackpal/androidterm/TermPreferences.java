@@ -16,6 +16,7 @@
 
 package jackpal.androidterm;
 
+import com.googlecode.abliss.term.R;
 import android.os.Bundle;
 import android.preference.PreferenceActivity;
 

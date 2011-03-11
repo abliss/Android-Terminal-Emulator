@@ -1,11 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="jackpal.androidterm"
+    package="com.googlecode.abliss.term"
       android:versionName="1.0.21" android:versionCode="22">
    <uses-permission android:name="android.permission.INTERNET" />
    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <application android:icon="@drawable/app_terminal"
                 android:label="@string/application_terminal">
-        <activity android:name="Term"
+        <activity android:name="jackpal.androidterm.Term"
                 android:theme="@style/Theme"
                 android:launchMode="singleInstance"
                 android:configChanges="keyboard|keyboardHidden|orientation"
@@ -15,7 +15,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name="TermPreferences"/>
+        <activity android:name="jackpal.androidterm.TermPreferences"/>
     </application>
     <uses-sdk android:minSdkVersion="4" />
 </manifest>
