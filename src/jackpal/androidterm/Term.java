@@ -3055,18 +3055,6 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
                 }
                 return false;
             }
-	    @Override public boolean commitCorrection(CorrectionInfo arg0) {
-                if (Term.LOG_IME) {
-                    Log.w(TAG, "commitCorrection " + arg0);
-                }
-                return false;
-            }
-	    @Override public boolean setComposingRegion(int a, int b) {
-                if (Term.LOG_IME) {
-                    Log.w(TAG, "commitCorrection " + a + "," + b);
-                }
-                return false;
-            }
 
             public boolean endBatchEdit() {
                 if (Term.LOG_IME) {
@@ -4444,19 +4432,11 @@ class TermKeyListener {
                 result = 27; // ^[ (Esc)
             } else if (result == '\\' || result == '4') {
                 result = 28;
-<<<<<<< HEAD
-            } else if ((result == ']') || (result == '4') || (result == '\'')) {
+            } else if (result == ']' || result == '5' || result == '\'') {
                 result = 29;
-            } else if ((result == '^') || (result == '3') || (result == '.')) {
+            } else if (result == '^' || result == '6' || result == '.') {
                 result = 30; // control-^
-            } else if ((result == '_') || (result == '2') || (result == '/')) {
-=======
-            } else if (result == ']' || result == '5') {
-                result = 29;
-            } else if (result == '^' || result == '6') {
-                result = 30; // control-^
-            } else if (result == '_' || result == '7') {
->>>>>>> 804f3b5fa145448d89867d8c34e778910bf10b35
+            } else if (result == '_' || result == '7' || result == '/') {
                 result = 31;
             } else if (result == '8') {
                 result = 127; // DEL

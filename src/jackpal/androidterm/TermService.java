@@ -16,6 +16,7 @@
 
 package jackpal.androidterm;
 
+import com.googlecode.abliss.term.R;
 import android.app.Service;
 import android.os.IBinder;
 import android.content.Intent;
