@@ -15,7 +15,7 @@
  * limitations under the License.
 -->
 <resources>
-   <string name="application_terminal">Terminal Emulator</string>
+   <string name="application_terminal">ATerm</string>
    <string name="preferences">Preferences</string>
    <string name="reset">Reset term</string>
    <string name="send_email">Email to</string>
