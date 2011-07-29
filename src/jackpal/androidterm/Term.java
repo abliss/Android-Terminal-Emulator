@@ -70,6 +70,15 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.os.Binder;
+import android.os.IBinder;
+
+import android.net.wifi.WifiManager;
+import android.os.PowerManager;
+
 /**
  * A terminal emulator activity.
  */
@@ -121,6 +130,11 @@ public class Term extends Activity {
     private FileOutputStream mTermOut;
 
     /**
+     * The process ID of the remote process.
+     */
+    private int mProcId = 0;
+
+    /**
      * A key listener that tracks the modifier keys and allows the full ASCII
      * character set to be entered.
      */
@@ -137,6 +151,7 @@ public class Term extends Activity {
     private int mFontSize = 9;
     private int mColorId = 2;
     private int mControlKeyId = 5; // Default to Volume Down
+    private int mFnKeyId = 4; // Default to Volume Up
     private int mUseCookedIME = 0;
 
     private static final String STATUSBAR_KEY = "statusbar";
@@ -145,6 +160,7 @@ public class Term extends Activity {
     private static final String FONTSIZE_KEY = "fontsize";
     private static final String COLOR_KEY = "color";
     private static final String CONTROLKEY_KEY = "controlkey";
+    private static final String FNKEY_KEY = "fnkey";
     private static final String IME_KEY = "ime";
     private static final String SHELL_KEY = "shell";
     private static final String INITIALCOMMAND_KEY = "initialcommand";
@@ -159,20 +175,36 @@ public class Term extends Activity {
     private static final int[][] COLOR_SCHEMES = {
         {BLACK, WHITE}, {WHITE, BLACK}, {WHITE, BLUE}, {GREEN, BLACK}, {AMBER, BLACK}, {RED, BLACK}};
 
-    private static final int[] CONTROL_KEY_SCHEMES = {
+	private static final int CONTROL_KEY_ID_NONE = 7;
+	/** An integer not in the range of real key codes. */
+	private static final int KEYCODE_NONE = -1;
+
+	private static final int[] CONTROL_KEY_SCHEMES = {
         KeyEvent.KEYCODE_DPAD_CENTER,
         KeyEvent.KEYCODE_AT,
         KeyEvent.KEYCODE_ALT_LEFT,
         KeyEvent.KEYCODE_ALT_RIGHT,
         KeyEvent.KEYCODE_VOLUME_UP,
         KeyEvent.KEYCODE_VOLUME_DOWN,
-        KeyEvent.KEYCODE_CAMERA
+        KeyEvent.KEYCODE_CAMERA,
+        KEYCODE_NONE
     };
-    private static final String[] CONTROL_KEY_NAME = {
-        "Ball", "@", "Left-Alt", "Right-Alt", "Vol-Up", "Vol-Dn", "Camera"
+
+    private static final int FN_KEY_ID_NONE = 7;
+
+    private static final int[] FN_KEY_SCHEMES = {
+        KeyEvent.KEYCODE_DPAD_CENTER,
+        KeyEvent.KEYCODE_AT,
+        KeyEvent.KEYCODE_ALT_LEFT,
+        KeyEvent.KEYCODE_ALT_RIGHT,
+        KeyEvent.KEYCODE_VOLUME_UP,
+        KeyEvent.KEYCODE_VOLUME_DOWN,
+        KeyEvent.KEYCODE_CAMERA,
+        KEYCODE_NONE
     };
 
     private int mControlKeyCode;
+    private int mFnKeyCode;
 
     private final static String DEFAULT_SHELL = "/system/bin/sh -";
     private String mShell;
@@ -189,12 +221,21 @@ public class Term extends Activity {
 
     private boolean mAlreadyStarted = false;
 
+    public TermService mTermService;
+    private Intent TSIntent;
+
+    private PowerManager.WakeLock mWakeLock;
+    private WifiManager.WifiLock mWifiLock;
+
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
         Log.e(Term.LOG_TAG, "onCreate");
         mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
         readPrefs();
+
+        TSIntent = new Intent(this, TermService.class);
+        startService(TSIntent);
 
         setContentView(R.layout.term_activity);
 
@@ -215,6 +256,11 @@ public class Term extends Activity {
 
         registerForContextMenu(mEmulatorView);
 
+        PowerManager pm = (PowerManager)getSystemService(Context.POWER_SERVICE);
+        mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, Term.LOG_TAG);
+        WifiManager wm = (WifiManager)getSystemService(Context.WIFI_SERVICE);
+        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, Term.LOG_TAG);
+
         updatePrefs();
         mAlreadyStarted = true;
     }
@@ -222,17 +268,28 @@ public class Term extends Activity {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (mProcId != 0) {
+            Exec.hangupProcessGroup(mProcId);
+            mProcId = 0;
+        }
         if (mTermFd != null) {
             Exec.close(mTermFd);
             mTermFd = null;
         }
+        if (mWakeLock.isHeld()) {
+            mWakeLock.release();
+        }
+        if (mWifiLock.isHeld()) {
+            mWifiLock.release();
+        }
+        stopService(TSIntent);
     }
 
     private void startListening() {
         int[] processId = new int[1];
 
         createSubprocess(processId);
-        final int procId = processId[0];
+        mProcId = processId[0];
 
         final Handler handler = new Handler() {
             @Override
@@ -243,8 +300,8 @@ public class Term extends Activity {
         Runnable watchForDeath = new Runnable() {
 
             public void run() {
-                Log.i(Term.LOG_TAG, "waiting for: " + procId);
-               int result = Exec.waitFor(procId);
+                Log.i(Term.LOG_TAG, "waiting for: " + mProcId);
+               int result = Exec.waitFor(mProcId);
                 Log.i(Term.LOG_TAG, "Subprocess exited: " + result);
                 handler.sendEmptyMessage(result);
              }
@@ -256,6 +313,18 @@ public class Term extends Activity {
         mTermOut = new FileOutputStream(mTermFd);
 
         mEmulatorView.initialize(mTermFd, mTermOut);
+
+        /* Check whether we've received an initial command from the
+         * launching application
+         */
+        String iInitialCommand = getIntent().getStringExtra("jackpal.androidterm.iInitialCommand");
+        if (iInitialCommand != null) {
+            if (mInitialCommand != null) {
+                mInitialCommand += "\r" + iInitialCommand;
+            } else {
+                mInitialCommand = iInitialCommand;
+            }
+        }
 
         sendInitialCommand();
     }
@@ -360,6 +429,8 @@ public class Term extends Activity {
         mColorId = readIntPref(COLOR_KEY, mColorId, COLOR_SCHEMES.length - 1);
         mControlKeyId = readIntPref(CONTROLKEY_KEY, mControlKeyId,
                 CONTROL_KEY_SCHEMES.length - 1);
+        mFnKeyId = readIntPref(FNKEY_KEY, mFnKeyId,
+                FN_KEY_SCHEMES.length - 1);
         mUseCookedIME = readIntPref(IME_KEY, mUseCookedIME, 1);
         {
             String newShell = readStringPref(SHELL_KEY, mShell);
@@ -393,6 +464,7 @@ public class Term extends Activity {
         mEmulatorView.setUseCookedIME(mUseCookedIME != 0);
         setColors();
         mControlKeyCode = CONTROL_KEY_SCHEMES[mControlKeyId];
+        mFnKeyCode = FN_KEY_SCHEMES[mFnKeyId];
         {
             Window win = getWindow();
             WindowManager.LayoutParams params = win.getAttributes();
@@ -428,6 +500,10 @@ public class Term extends Activity {
 
     public int getControlKeyCode() {
         return mControlKeyCode;
+    }
+
+    public int getFnKeyCode() {
+        return mFnKeyCode;
     }
 
     @Override
@@ -470,8 +546,29 @@ public class Term extends Activity {
             doDocumentKeys();
         } else if (id == R.id.menu_toggle_soft_keyboard) {
             doToggleSoftKeyboard();
+        } else if (id == R.id.menu_toggle_wakelock) {
+            doToggleWakeLock();
+        } else if (id == R.id.menu_toggle_wifilock) {
+            doToggleWifiLock();
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public boolean onPrepareOptionsMenu(Menu menu) {
+        MenuItem wakeLockItem = menu.findItem(R.id.menu_toggle_wakelock);
+        MenuItem wifiLockItem = menu.findItem(R.id.menu_toggle_wifilock);
+        if (mWakeLock.isHeld()) {
+            wakeLockItem.setTitle(R.string.disable_wakelock);
+        } else {
+            wakeLockItem.setTitle(R.string.enable_wakelock);
+        }
+        if (mWifiLock.isHeld()) {
+            wifiLockItem.setTitle(R.string.disable_wifilock);
+        } else {
+            wifiLockItem.setTitle(R.string.enable_wifilock);
+        }
+        return super.onPrepareOptionsMenu(menu);
     }
 
     @Override
@@ -563,29 +660,57 @@ public class Term extends Activity {
     }
 
     private void doDocumentKeys() {
-        String controlKey = CONTROL_KEY_NAME[mControlKeyId];
-        new AlertDialog.Builder(this).
-            setTitle("Press " + controlKey + " and Key").
-            setMessage(controlKey + " Space : Control-@ (NUL)\n"
-                    + controlKey + " A..Z : Control-A..Z\n"
-                    + controlKey + " 1 : Control-[ (ESC)\n"
-                    + controlKey + " 2 : Control-_\n"
-                    + controlKey + " 3 : Control-^\n"
-                    + controlKey + " 4 : Control-]\n"
-                    + controlKey + " 5 : | (pipe)\n"
-                    + controlKey + " 6 : Left arrow\n"
-                    + controlKey + " 7 : Down arrow\n"
-                    + controlKey + " 8 : Up arrow\n"
-                    + controlKey + " 9 : Right arrow\n"
-                    + controlKey + " . : Control-\\"
-                    ).show();
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this);
+        Resources r = getResources();
+        dialog.setTitle(r.getString(R.string.control_key_dialog_title));
+        dialog.setMessage(
+            formatMessage(mControlKeyId, CONTROL_KEY_ID_NONE,
+                r, R.array.control_keys_short_names,
+                R.string.control_key_dialog_control_text,
+                R.string.control_key_dialog_control_disabled_text, "CTRLKEY")
+            + "\n\n" +
+            formatMessage(mFnKeyId, FN_KEY_ID_NONE,
+                r, R.array.fn_keys_short_names,
+                R.string.control_key_dialog_fn_text,
+                R.string.control_key_dialog_fn_disabled_text, "FNKEY"));
+         dialog.show();
      }
+
+     private String formatMessage(int keyId, int disabledKeyId,
+         Resources r, int arrayId,
+         int enabledId,
+         int disabledId, String regex) {
+         if (keyId == disabledKeyId) {
+             return r.getString(disabledId);
+         }
+         String[] keyNames = r.getStringArray(arrayId);
+         String keyName = keyNames[keyId];
+         String template = r.getString(enabledId);
+         String result = template.replaceAll(regex, keyName);
+         return result;
+    }
 
     private void doToggleSoftKeyboard() {
         InputMethodManager imm = (InputMethodManager)
             getSystemService(Context.INPUT_METHOD_SERVICE);
         imm.toggleSoftInput(InputMethodManager.SHOW_FORCED,0);
 
+    }
+
+    private void doToggleWakeLock() {
+        if (mWakeLock.isHeld()) {
+            mWakeLock.release();
+        } else {
+            mWakeLock.acquire();
+        }
+    }
+
+    private void doToggleWifiLock() {
+        if (mWifiLock.isHeld()) {
+            mWifiLock.release();
+        } else {
+            mWifiLock.acquire();
+        }
     }
 }
 
@@ -940,7 +1065,7 @@ class TranscriptScreen implements Screen {
                 || dy + h > mScreenRows) {
             throw new IllegalArgumentException();
         }
-        if (sy <= dy) {
+        if (sy > dy) {
             // Move in increasing order
             for (int y = 0; y < h; y++) {
                 int srcOffset = getOffset(sx, sy + y);
@@ -1735,10 +1860,10 @@ class TerminalEmulator {
             break;
 
         case 'M': // Reverse index
-            if (mCursorRow == 0) {
-                mScreen.blockCopy(0, mTopMargin + 1, mColumns, mBottomMargin
-                        - (mTopMargin + 1), 0, mTopMargin);
-                blockClear(0, mBottomMargin - 1, mColumns);
+            if (mCursorRow <= mTopMargin) {
+                mScreen.blockCopy(0, mTopMargin, mColumns, mBottomMargin
+                        - (mTopMargin + 1), 0, mTopMargin + 1);
+                blockClear(0, mTopMargin, mColumns);
             } else {
                 mCursorRow--;
             }
@@ -1984,6 +2109,9 @@ class TerminalEmulator {
                     code = 0;
                 }
             }
+
+            // See http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
+
             if (code == 0) { // reset
                 mInverseColors = false;
                 mForeColor = 7;
@@ -1994,10 +2122,21 @@ class TerminalEmulator {
                 mBackColor |= 0x8;
             } else if (code == 7) { // inverse
                 mInverseColors = true;
+            } else if (code == 22) { // Normal color or intensity, neither bright, bold nor faint
+                mForeColor &= 0x7;
+            } else if (code == 24) { // underline: none
+                mBackColor &= 0x7;
+            } else if (code == 27) { // image: positive
+                mInverseColors = false;
             } else if (code >= 30 && code <= 37) { // foreground color
                 mForeColor = (mForeColor & 0x8) | (code - 30);
+            } else if (code == 39) { // set default text color
+                mForeColor = 7;
+                mBackColor = mBackColor & 0x7;
             } else if (code >= 40 && code <= 47) { // background color
                 mBackColor = (mBackColor & 0x8) | (code - 40);
+            } else if (code == 49) { // set default background color
+                mBackColor = mBackColor & 0x8; // color 0, but preserve underscore.
             } else {
                 if (Term.LOG_UNKNOWN_ESCAPE_SEQUENCES) {
                     Log.w(Term.LOG_TAG, String.format("SGR unknown code %d", code));
@@ -2858,6 +2997,8 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
             private int mCursor;
             private int mComposingTextStart;
             private int mComposingTextEnd;
+            private int mSelectedTextStart;
+            private int mSelectedTextEnd;
 
             private void sendChar(int c) {
                 try {
@@ -2884,6 +3025,8 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
                 int result = mKeyListener.mapControlChar(c);
                 if (result < TermKeyListener.KEYCODE_OFFSET) {
                     mTermOut.write(result);
+                } else {
+                    mKeyListener.handleKeyCode(result - TermKeyListener.KEYCODE_OFFSET, mTermOut, getKeypadApplicationMode());
                 }
             }
 
@@ -3003,6 +3146,13 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
                 return true;
             }
 
+            public boolean commitCorrection (CorrectionInfo correctionInfo) {
+                if (Term.LOG_IME) {
+                    Log.w(TAG, "commitCorrection");
+                }
+                return true;
+            }
+
             public boolean commitText(CharSequence text, int newCursorPosition) {
                 if (Term.LOG_IME) {
                     Log.w(TAG, "commitText(\"" + text + "\", " + newCursorPosition + ")");
@@ -3081,17 +3231,39 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
                 return true;
             }
 
-            public boolean setSelection(int arg0, int arg1) {
+            public boolean setSelection(int start, int end) {
                 if (Term.LOG_IME) {
-                    Log.w(TAG, "setSelection" + arg0 + "," + arg1);
+                    Log.w(TAG, "setSelection" + start + "," + end);
+                }
+                int length = mImeBuffer.length();
+                if (start == end && start > 0 && start < length) {
+                    mSelectedTextStart = mSelectedTextEnd = 0;
+                    mCursor = start;
+                } else if (start < end && start > 0 && end < length) {
+                    mSelectedTextStart = start;
+                    mSelectedTextEnd = end;
+                    mCursor = start;
                 }
                 return true;
             }
-            public CharSequence getSelectedText(int arg0) {
+
+            public boolean setComposingRegion(int start, int end) {
                 if (Term.LOG_IME) {
-                    Log.w(TAG, "setSelection" + arg0 );
+                    Log.w(TAG, "setComposingRegion " + start + "," + end);
                 }
-                return null;
+                if (start < end && start > 0 && end < mImeBuffer.length()) {
+                    clearComposingText();
+                    mComposingTextStart = start;
+                    mComposingTextEnd = end;
+                }
+                return true;
+            }
+
+            public CharSequence getSelectedText(int flags) {
+                if (Term.LOG_IME) {
+                    Log.w(TAG, "getSelectedText " + flags);
+                }
+                return mImeBuffer.substring(mSelectedTextStart, mSelectedTextEnd+1);
             }
         };
     }
@@ -3352,6 +3524,8 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
         }
         if (handleControlKey(keyCode, true)) {
             return true;
+        } else if (handleFnKey(keyCode, true)) {
+            return true;
         } else if (isSystemKey(keyCode, event)) {
             // Don't intercept the system keys
             return super.onKeyDown(keyCode, event);
@@ -3375,6 +3549,8 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
         }
         if (handleControlKey(keyCode, false)) {
             return true;
+        } else if (handleFnKey(keyCode, false)) {
+            return true;
         } else if (isSystemKey(keyCode, event)) {
             // Don't intercept the system keys
             return super.onKeyUp(keyCode, event);
@@ -3391,6 +3567,17 @@ class EmulatorView extends View implements GestureDetector.OnGestureListener {
                 Log.w(TAG, "handleControlKey " + keyCode);
             }
             mKeyListener.handleControlKey(down);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean handleFnKey(int keyCode, boolean down) {
+        if (keyCode == mTerm.getFnKeyCode()) {
+            if (LOG_KEY_EVENTS) {
+                Log.w(TAG, "handleFnKey " + keyCode);
+            }
+            mKeyListener.handleFnKey(down);
             return true;
         }
         return false;
@@ -4213,6 +4400,8 @@ class TermKeyListener {
 
     private ModifierKey mControlKey = new ModifierKey();
 
+    private ModifierKey mFnKey = new ModifierKey();
+
     private boolean mCapsLock;
 
     static public final int KEYCODE_OFFSET = 1000;
@@ -4233,34 +4422,85 @@ class TermKeyListener {
         }
     }
 
+    public void handleFnKey(boolean down) {
+        if (down) {
+            mFnKey.onPress();
+        } else {
+            mFnKey.onRelease();
+        }
+    }
+
     public int mapControlChar(int ch) {
         int result = ch;
         if (mControlKey.isActive()) {
             // Search is the control key.
             if (result >= 'a' && result <= 'z') {
                 result = (char) (result - 'a' + '\001');
-            } else if (result == ' ') {
+            } else if (result >= 'A' && result <= 'Z') {
+                result = (char) (result - 'A' + '\001');
+            } else if (result == ' ' || result == '2') {
                 result = 0;
-            } else if ((result == '[') || (result == '1')) {
-                result = 27;
-            } else if ((result == '\\') || (result == '.')) {
+            } else if (result == '[' || result == '3') {
+                result = 27; // ^[ (Esc)
+            } else if (result == '\\' || result == '4') {
                 result = 28;
+<<<<<<< HEAD
             } else if ((result == ']') || (result == '4') || (result == '\'')) {
                 result = 29;
             } else if ((result == '^') || (result == '3') || (result == '.')) {
                 result = 30; // control-^
             } else if ((result == '_') || (result == '2') || (result == '/')) {
+=======
+            } else if (result == ']' || result == '5') {
+                result = 29;
+            } else if (result == '^' || result == '6') {
+                result = 30; // control-^
+            } else if (result == '_' || result == '7') {
+>>>>>>> 804f3b5fa145448d89867d8c34e778910bf10b35
                 result = 31;
-            } else if ((result == '5')) {
-                result = '|';
-            } else if ((result == '6')) {
-                result = KEYCODE_OFFSET + KeyEvent.KEYCODE_DPAD_LEFT;
-            } else if ((result == '7')) {
-                result = KEYCODE_OFFSET + KeyEvent.KEYCODE_DPAD_DOWN;
-            } else if ((result == '8')) {
+            } else if (result == '8') {
+                result = 127; // DEL
+            } else if (result == '9') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_F11;
+            } else if (result == '0') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_F12;
+            }
+        } else if (mFnKey.isActive()) {
+            if (result == 'w' || result == 'W') {
                 result = KEYCODE_OFFSET + KeyEvent.KEYCODE_DPAD_UP;
-            } else if ((result == '9')) {
+            } else if (result == 'a' || result == 'A') {
+                result = KEYCODE_OFFSET + KeyEvent.KEYCODE_DPAD_LEFT;
+            } else if (result == 's' || result == 'S') {
+                result = KEYCODE_OFFSET + KeyEvent.KEYCODE_DPAD_DOWN;
+            } else if (result == 'd' || result == 'D') {
                 result = KEYCODE_OFFSET + KeyEvent.KEYCODE_DPAD_RIGHT;
+            } else if (result == 'p' || result == 'P') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_PAGE_UP;
+            } else if (result == 'n' || result == 'N') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_PAGE_DOWN;
+            } else if (result == 't' || result == 'T') {
+                result = KEYCODE_OFFSET + KeyEvent.KEYCODE_TAB;
+            } else if (result == 'l' || result == 'L') {
+                result = '|';
+            } else if (result == 'u' || result == 'U') {
+                result = '_';
+            } else if (result == 'e' || result == 'E') {
+                result = 27; // ^[ (Esc)
+            } else if (result == '.') {
+                result = 28; // ^\
+            } else if (result > '0' && result <= '9') {
+                // F1-F9
+                result = (char)(result + KEYCODE_OFFSET + TermKeyListener.KEYCODE_F1 - 1);
+            } else if (result == '0') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_F10;
+            } else if (result == 'i' || result == 'I') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_INSERT;
+            } else if (result == 'x' || result == 'X') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_FORWARD_DEL;
+            } else if (result == 'h' || result == 'H') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_MOVE_HOME;
+            } else if (result == 'f' || result == 'F') {
+                result = KEYCODE_OFFSET + TermKeyListener.KEYCODE_MOVE_END;
             }
         }
 
@@ -4268,6 +4508,7 @@ class TermKeyListener {
             mAltKey.adjustAfterKeypress();
             mCapKey.adjustAfterKeypress();
             mControlKey.adjustAfterKeypress();
+            mFnKey.adjustAfterKeypress();
         }
 
         return result;
@@ -4323,7 +4564,7 @@ class TermKeyListener {
         }
     }
 
-    private boolean handleKeyCode(int keyCode, OutputStream out, boolean appMode) throws IOException {
+    public boolean handleKeyCode(int keyCode, OutputStream out, boolean appMode) throws IOException {
         if (keyCode >= 0 && keyCode < mKeyCodes.length) {
             String code = null;
             if (appMode) {

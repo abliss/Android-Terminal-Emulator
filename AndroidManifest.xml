@@ -1,13 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.googlecode.abliss.term"
-      android:versionName="1.0.21" android:versionCode="22">
+      android:versionName="1.0.31" android:versionCode="32"
+      android:installLocation="auto">
    <uses-permission android:name="android.permission.INTERNET" />
    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+   <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application android:icon="@drawable/app_terminal"
                 android:label="@string/application_terminal">
         <activity android:name="jackpal.androidterm.Term"
                 android:theme="@style/Theme"
-                android:launchMode="singleInstance"
+                android:launchMode="singleTask"
                 android:configChanges="keyboard|keyboardHidden|orientation"
                 android:windowSoftInputMode="adjustResize|stateVisible">
             <intent-filter>
@@ -16,6 +18,8 @@
             </intent-filter>
         </activity>
         <activity android:name="jackpal.androidterm.TermPreferences"/>
+        <service android:name="jackpal.androidterm.TermService" />
     </application>
-    <uses-sdk android:minSdkVersion="4" />
+    <uses-sdk android:minSdkVersion="3" android:targetSdkVersion="10" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 </manifest>

@@ -22,10 +22,17 @@
    <string name="special_keys">Special keys</string>
    <string name="toggle_soft_keyboard">Toggle soft keyboard</string>
 
+   <string name="enable_wakelock">Take WakeLock</string>
+   <string name="disable_wakelock">Drop WakeLock</string>
+   <string name="enable_wifilock">Take WifiLock</string>
+   <string name="disable_wifilock">Drop WifiLock</string>
+
    <string name="edit_text">Edit text</string>
    <string name="select_text">Select text</string>
    <string name="copy_all">Copy all</string>
    <string name="paste">Paste</string>
+
+   <string name="service_notify_text">Terminal session is running</string>
 
    <!-- Preference dialog -->
    <string name="screen_preferences">Screen</string>
@@ -58,6 +65,10 @@
    <string name="summary_controlkey_preference">Choose control key.</string>
    <string name="dialog_title_controlkey_preference">Control key</string>
 
+   <string name="title_fnkey_preference">Fn key</string>
+   <string name="summary_fnkey_preference">Choose Fn key.</string>
+   <string name="dialog_title_fnkey_preference">Fn key</string>
+
    <string name="title_ime_preference">Input method</string>
    <string name="summary_ime_preference">Choose input method for soft keyboard.</string>
    <string name="dialog_title_ime_preference">Input method</string>
@@ -77,8 +88,20 @@
    <string name="default_value_cursorblink_preference">0</string>
    <string name="default_value_fontsize_preference">10</string>
    <string name="default_value_color_preference">2</string>
-   <string name="default_value_controlkey_preference">0</string>
+   <string name="default_value_controlkey_preference">5</string>
+   <string name="default_value_fnkey_preference">4</string>
    <string name="default_value_ime_preference">0</string>
    <string name="default_value_shell_preference">/system/bin/sh -</string>
    <string name="default_value_initialcommand_preference">export PATH=/data/local/bin:$PATH</string>
+   
+   <string name="control_key_dialog_title">Control and Function Keys</string>
+   <!-- The word CTRLKEY should be left un-translated. It will be replaced at run-time with the
+        actual control key key name. -->
+   <string name="control_key_dialog_control_text">CTRLKEY Space : Control-@ (NUL)\nCTRLKEY A..Z : Control-A..Z\nCTRLKEY 5 : Control-]\nCTRLKEY 6 : Control-^\nCTRLKEY 7 : Control-_\nCTRLKEY 9 : F11\nCTRLKEY 0 : F12</string>
+  <string name="control_key_dialog_control_disabled_text">No control key set.</string>
+  <!-- The word FNKEY should be left un-translated. It will be replaced at run-time with the
+       actual function key key name. -->
+  <string name="control_key_dialog_fn_text">FNKEY 1..9 : F1-F9\nFNKEY 0 : F10\nFNKEY W : Up\nFNKEY A : Left\nFNKEY S : Down\nFNKEY D : Right\nFNKEY P : PageUp\nFNKEY N : PageDown\nFNKEY T : Tab\nFNKEY L : | (pipe)\nFNKEY U : _ (underscore)\nFNKEY E : Control-[ (ESC)\nFNKEY X : Delete\nFNKEY I : Insert\nFNKEY H : Home\nFNKEY F : End\nFNKEY . : Control-\\\n</string>
+  <string name="control_key_dialog_fn_disabled_text">No function key set.</string>
+   
 </resources>
