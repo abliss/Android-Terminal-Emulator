@@ -4245,11 +4245,11 @@ class TermKeyListener {
                 result = 27;
             } else if ((result == '\\') || (result == '.')) {
                 result = 28;
-            } else if ((result == ']') || (result == '4')) {
+            } else if ((result == ']') || (result == '4') || (result == '\'')) {
                 result = 29;
-            } else if ((result == '^') || (result == '3')) {
+            } else if ((result == '^') || (result == '3') || (result == '.')) {
                 result = 30; // control-^
-            } else if ((result == '_') || (result == '2')) {
+            } else if ((result == '_') || (result == '2') || (result == '/')) {
                 result = 31;
             } else if ((result == '5')) {
                 result = '|';
